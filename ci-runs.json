@@ -1,0 +1,7 @@
+{
+  "case_id": "e-006",
+  "intentional_regression_run_url": "https://github.com/maiufukui/cartwheel-homeworks/actions/runs/36266932341",
+  "revert_run_url": "https://github.com/maiufukui/cartwheel-homeworks/actions/runs/36268236170",
+  "second_run_result": "Harbor failed: e-006 recovered to 5/5 (pass) after revert; e-009 5/5 (pass); e-007 regression blocked at 4/5 (one trial failed order-context judge). No infrastructure errors in summary.",
+  "explanation": "Temporary prompt forbidding order ids broke e-006 (0/5) and hurt e-007 on the first run. After revert, e-006 and e-009 passed all five trials, showing the intentional break was reversed. The second run still failed CI because e-007 missed one of five trials—agent variance, not a leftover prompt change."
+}
