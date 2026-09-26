@@ -295,7 +295,8 @@ def normalize_trace(value: Any) -> dict[str, Any]:
         "scenario_id": raw.get("cartwheel_scenario_id")
         or metadata.get("cartwheel.scenario_id")
         or metadata.get("scenario_id"),
-        "session_id": metadata.get("cartwheel.session_id") or metadata.get("session_id"),
+        "session_id": metadata.get("cartwheel.session_id")
+        or metadata.get("session_id"),
     }
     if not meta.get("session_id"):
         from .session_backfill import load_session_backfill
