@@ -386,7 +386,8 @@ def run_last_hours(
 ) -> None:
     end = datetime.now(timezone.utc)
     start = end - timedelta(hours=hours)
-    batch_label = end.strftime("%Y-%m-%dT%H:%MZ")
+    # No ":" in the label — artifact upload rejects colons in paths.
+    batch_label = end.strftime("%Y-%m-%dT%H%MZ")
     expected_model = str(config["model"])
 
     raw_traces = _fetch_normalized_traces()
