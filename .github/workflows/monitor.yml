@@ -9,7 +9,8 @@ on:
 jobs:
   monitor:
     name: daily monitor
-    runs-on: ubuntu-latest
+    # Local Langfuse (localhost:3000) is only reachable from your machine.
+    runs-on: self-hosted
     env:
       LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
       LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
