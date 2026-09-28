@@ -26,13 +26,26 @@ HISTORY_PATH = REPO_ROOT / "monitoring" / "history.jsonl"
 
 
 def _normalize_langfuse_host_env() -> None:
-    """Ensure LANGFUSE_HOST includes a scheme for the Langfuse HTTP client."""
-    host = (os.environ.get("LANGFUSE_HOST") or "").strip()
+    """Ensure LANGFUSE_HOST is a usable base URL for the Langfuse HTTP client."""
+    host = (os.environ.get("LANGFUSE_HOST") or "").strip().strip('"').strip("'")
+    if host.startswith("LANGFUSE_HOST="):
+        host = host.split("=", 1)[1].strip().strip('"').strip("'")
     if not host:
-        return
-    if host.startswith(("http://", "https://")):
-        return
-    os.environ["LANGFUSE_HOST"] = f"http://{host}"
+        raise ValueError(
+            "LANGFUSE_HOST is empty; set it to your Langfuse base URL "
+            "(e.g. http://localhost:3000 for the local Docker stack)."
+        )
+    if not host.startswith(("http://", "https://")):
+        host = f"http://{host}"
+    os.environ["LANGFUSE_HOST"] = host.rstrip("/")
+    from urllib.parse import urlparse
+
+    parsed = urlparse(host)
+    if not parsed.hostname:
+        raise ValueError(
+            f"LANGFUSE_HOST {host!r} has no hostname; use e.g. http://localhost:3000 "
+            "(not a .env line, no quotes)."
+        )
 
 
 def _parse_instant(value: str) -> datetime:

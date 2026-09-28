@@ -38,13 +38,24 @@ jobs:
             echo "Add LANGFUSE_HOST under Settings → Secrets and variables → Actions → Variables (or add a repository secret named LANGFUSE_HOST)."
             exit 1
           fi
+          LANGFUSE_HOST="$(printf '%s' "$LANGFUSE_HOST" | tr -d '\r\n' | sed 's/^["'\''"]//;s/["'\''"]$//')"
+          case "$LANGFUSE_HOST" in
+            LANGFUSE_HOST=*) LANGFUSE_HOST="${LANGFUSE_HOST#LANGFUSE_HOST=}" ;;
+          esac
           case "$LANGFUSE_HOST" in
             http://*|https://*) ;;
             *)
-              echo "LANGFUSE_HOST has no scheme; monitor will use http://${LANGFUSE_HOST}"
-              export LANGFUSE_HOST="http://${LANGFUSE_HOST}"
+              echo "LANGFUSE_HOST has no scheme; using http://${LANGFUSE_HOST}"
+              LANGFUSE_HOST="http://${LANGFUSE_HOST}"
               ;;
           esac
+          export LANGFUSE_HOST="${LANGFUSE_HOST%/}"
+          if ! printf '%s' "$LANGFUSE_HOST" | grep -qE '^https?://[^/[:space:]]+'; then
+            echo "::error::LANGFUSE_HOST must be a URL like http://localhost:3000 (no spaces, no .env prefix, no cloud typo languse)."
+            exit 1
+          fi
+          echo "LANGFUSE_HOST is set (length ${#LANGFUSE_HOST} chars)."
+          echo "LANGFUSE_HOST=${LANGFUSE_HOST}" >> "$GITHUB_ENV"
 
       - name: Run monitor (last 24 hours)
         run: uv run python -m monitoring.run --last-hours 24
