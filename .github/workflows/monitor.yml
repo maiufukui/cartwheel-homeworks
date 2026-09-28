@@ -38,6 +38,13 @@ jobs:
             echo "Add LANGFUSE_HOST under Settings → Secrets and variables → Actions → Variables (or add a repository secret named LANGFUSE_HOST)."
             exit 1
           fi
+          case "$LANGFUSE_HOST" in
+            http://*|https://*) ;;
+            *)
+              echo "LANGFUSE_HOST has no scheme; monitor will use http://${LANGFUSE_HOST}"
+              export LANGFUSE_HOST="http://${LANGFUSE_HOST}"
+              ;;
+          esac
 
       - name: Run monitor (last 24 hours)
         run: uv run python -m monitoring.run --last-hours 24

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -22,6 +23,16 @@ CONFIG_PATH = REPO_ROOT / "monitoring" / "config.json"
 SCENARIOS_PATH = REPO_ROOT / "scenarios" / "monitoring_scenarios.jsonl"
 ARTIFACTS_DIR = REPO_ROOT / "monitoring" / "artifacts"
 HISTORY_PATH = REPO_ROOT / "monitoring" / "history.jsonl"
+
+
+def _normalize_langfuse_host_env() -> None:
+    """Ensure LANGFUSE_HOST includes a scheme for the Langfuse HTTP client."""
+    host = (os.environ.get("LANGFUSE_HOST") or "").strip()
+    if not host:
+        return
+    if host.startswith(("http://", "https://")):
+        return
+    os.environ["LANGFUSE_HOST"] = f"http://{host}"
 
 
 def _parse_instant(value: str) -> datetime:
@@ -516,6 +527,7 @@ def main() -> None:
     if bool(args.period) == bool(args.last_hours):
         parser.error("specify exactly one of --period or --last-hours")
 
+    _normalize_langfuse_host_env()
     config = _load_config()
     if args.period:
         period = _period_config(config, args.period)
