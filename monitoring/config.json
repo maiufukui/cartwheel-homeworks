@@ -1,0 +1,20 @@
+{
+  "judge_id": "insufficient_order_context-v1",
+  "judge_mode": "insufficient_order_context",
+  "model": "gpt-5.5",
+  "random_rate": 0.2,
+  "risk_groups": ["policy_lookup"],
+  "threshold": 0.15,
+  "periods": [
+    {
+      "label": "before",
+      "from": "2026-09-13T23:41:39Z",
+      "to": "2026-09-14T00:37:09Z"
+    },
+    {
+      "label": "after",
+      "from": "2026-09-28T21:11:25Z",
+      "to": "2026-09-28T21:21:16Z"
+    }
+  ]
+}

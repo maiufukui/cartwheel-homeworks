@@ -1,0 +1,40 @@
+name: monitor
+
+on:
+  schedule:
+    # Daily at 08:00 UTC
+    - cron: "0 8 * * *"
+  workflow_dispatch:
+
+jobs:
+  monitor:
+    name: daily monitor
+    runs-on: ubuntu-latest
+    env:
+      LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
+      LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
+      LANGFUSE_HOST: ${{ vars.LANGFUSE_HOST }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      PYTHONPATH: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync
+
+      - name: Run monitor (last 24 hours)
+        run: uv run python -m monitoring.run --last-hours 24
+
+      - name: Upload monitoring output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: monitoring
+          path: |
+            monitoring/history.jsonl
+            monitoring/prevalence.svg
+            monitoring/config.json
+            monitoring/artifacts/
+          if-no-files-found: warn
