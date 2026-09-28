@@ -13,7 +13,7 @@ jobs:
     env:
       LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
       LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
-      LANGFUSE_HOST: ${{ vars.LANGFUSE_HOST }}
+      LANGFUSE_HOST: ${{ vars.LANGFUSE_HOST || secrets.LANGFUSE_HOST }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       PYTHONPATH: ${{ github.workspace }}
     steps:
@@ -23,6 +23,20 @@ jobs:
 
       - uses: astral-sh/setup-uv@v5
       - run: uv sync
+
+      - name: Verify Langfuse and judge env
+        run: |
+          missing=""
+          test -n "${LANGFUSE_PUBLIC_KEY}" || missing="${missing} LANGFUSE_PUBLIC_KEY"
+          test -n "${LANGFUSE_SECRET_KEY}" || missing="${missing} LANGFUSE_SECRET_KEY"
+          test -n "${LANGFUSE_HOST}" || missing="${missing} LANGFUSE_HOST"
+          test -n "${OPENAI_API_KEY}" || missing="${missing} OPENAI_API_KEY"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing GitHub configuration:$missing"
+            echo "Add LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY under Settings → Secrets and variables → Actions → Secrets."
+            echo "Add LANGFUSE_HOST under Settings → Secrets and variables → Actions → Variables (or add a repository secret named LANGFUSE_HOST)."
+            exit 1
+          fi
 
       - name: Run monitor (last 24 hours)
         run: uv run python -m monitoring.run --last-hours 24
