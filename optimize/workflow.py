@@ -1,4 +1,4 @@
-"""Small, testable rules shared by the Homework 9 commands."""
+"""Small, testable rules shared by the Homework 8 commands."""
 
 from __future__ import annotations
 
@@ -58,7 +58,7 @@ def current_commit(cwd: Path = REPO_ROOT) -> str:
 
 
 def grader_hash(root: Path = REPO_ROOT) -> str:
-    """Hash every file that defines the Homework 9 scores."""
+    """Hash every file that defines the Homework 8 scores."""
     paths = [root / "eval_cases" / "cases.jsonl"]
     for folder in (root / "tests" / "eval", root / "analysis" / "state" / "judges"):
         if folder.exists():
@@ -72,23 +72,36 @@ def grader_hash(root: Path = REPO_ROOT) -> str:
     return digest.hexdigest()
 
 
-def make_split(cases: list[dict[str, Any]], seed: str = "cartwheel-hw9-v1") -> dict[str, Any]:
-    """Place about one third of each case kind in the test set."""
+def is_expected_write(case: dict[str, Any]) -> bool:
+    """Whether a case expects the agent to change data, e.g., issue a refund."""
+    from replay.rollout import WRITE_TOOLS
+
+    return any(
+        check["check"] == "refund_status"
+        or (check["check"] == "tool_called" and check.get("name") in WRITE_TOOLS)
+        for check in case["expected"].get("checks", [])
+    )
+
+
+def make_split(cases: list[dict[str, Any]], seed: str = "cartwheel-hw8-v1") -> dict[str, Any]:
+    """Place about one third of each (kind, writes data) group in the test set."""
     if len(cases) < 6:
-        raise ValueError("Homework 9 needs at least six evaluation cases")
+        raise ValueError("Homework 8 needs at least six evaluation cases")
     ids = [case["id"] for case in cases]
     if len(ids) != len(set(ids)):
         raise ValueError("evaluation case identifiers must be unique")
-    groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    groups: dict[tuple[str, bool], list[dict[str, Any]]] = defaultdict(list)
     for case in cases:
-        groups[case["kind"]].append(case)
+        groups[(case["kind"], is_expected_write(case))].append(case)
     test_ids: list[str] = []
-    for kind, group in sorted(groups.items()):
+    for (kind, writes), group in sorted(groups.items()):
         ordered = sorted(
             group,
             key=lambda case: sha256_bytes(f"{seed}:{kind}:{case['id']}".encode()),
         )
-        test_count = max(1, round(len(group) / 3))
+        # A group of one stays in development; larger groups keep at least one
+        # case on each side.
+        test_count = 0 if len(group) < 2 else min(len(group) - 1, max(1, round(len(group) / 3)))
         test_ids.extend(case["id"] for case in ordered[:test_count])
     all_ids = {case["id"] for case in cases}
     test_set = set(test_ids)
@@ -112,13 +125,13 @@ def split_membership_hash(split: dict[str, Any]) -> str:
 def validate_split(split: dict[str, Any], cases_path: Path = CASES_PATH) -> None:
     current_hash = sha256_file(cases_path)
     if split.get("cases_sha256") != current_hash:
-        raise ValueError("eval_cases/cases.jsonl changed after the Homework 9 split was made")
+        raise ValueError("eval_cases/cases.jsonl changed after the Homework 8 split was made")
     development = set(split["development_case_ids"])
     test = set(split["test_case_ids"])
     if development & test:
         raise ValueError("the development and test case lists overlap")
     if split.get("membership_sha256") != split_membership_hash(split):
-        raise ValueError("the Homework 9 development or test membership changed")
+        raise ValueError("the Homework 8 development or test membership changed")
 
 
 def validate_model_selection(config: dict[str, Any]) -> None:
@@ -154,12 +167,19 @@ def reserve_search_calls(required: int, label: str, path: Path = BUDGET_PATH) ->
     return budget
 
 
+def release_search_calls(count: int, label: str, path: Path = BUDGET_PATH) -> dict[str, Any]:
+    """Return runs that were reserved but never executed, e.g., after a crash."""
+    budget = read_json(path)
+    budget["used_calls"] = max(0, int(budget["used_calls"]) - count)
+    budget.setdefault("reservations", []).append(
+        {"label": label, "calls": -count, "reserved_at": now_utc(), "note": "released after a failed run"}
+    )
+    write_json(path, budget)
+    return budget
+
+
 def dominates(left: dict[str, Any], right: dict[str, Any]) -> bool:
     """Return whether left is at least as good and no more costly than right."""
-    if not left.get("safety_passed"):
-        return False
-    if not right.get("safety_passed"):
-        return True
     cost_field = "cost_per_100_conversations_usd"
     no_worse = left["score"] >= right["score"] and left[cost_field] <= right[cost_field]
     strictly_better = left["score"] > right["score"] or left[cost_field] < right[cost_field]

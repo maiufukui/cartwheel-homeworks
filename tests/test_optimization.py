@@ -1,4 +1,4 @@
-"""Offline contract tests for the supplied Homework 9 workflow."""
+"""Offline contract tests for the supplied Homework 8 workflow."""
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ def _case(number: int, kind: str) -> dict:
     }
 
 
-def test_hw9_split_is_stable_disjoint_and_twenty_ten() -> None:
+def test_hw8_split_is_stable_disjoint_and_twenty_ten() -> None:
     cases = [*(_case(i, "regression") for i in range(1, 21))]
     cases.extend(_case(i, "capability") for i in range(21, 31))
     first = make_split(cases)
@@ -40,7 +40,7 @@ def test_hw9_split_is_stable_disjoint_and_twenty_ten() -> None:
     assert len(first["membership_sha256"]) == 64
 
 
-def test_hw9_budget_refuses_an_overrun(tmp_path) -> None:
+def test_hw8_budget_refuses_an_overrun(tmp_path) -> None:
     path = tmp_path / "budget.json"
     path.write_text(json.dumps({"maximum_calls": 3, "used_calls": 0, "reservations": []}))
 
@@ -51,7 +51,7 @@ def test_hw9_budget_refuses_an_overrun(tmp_path) -> None:
     assert json.loads(path.read_text())["used_calls"] == 2
 
 
-def test_hw9_write_case_runs_five_times() -> None:
+def test_hw8_write_case_runs_five_times() -> None:
     write_case = {
         "expected": {"checks": [{"check": "refund_status", "order_id": 1}]}
     }
@@ -61,31 +61,27 @@ def test_hw9_write_case_runs_five_times() -> None:
     assert runs_for_case(read_case) == 1
 
 
-def test_hw9_frontier_marks_only_strictly_worse_points() -> None:
+def test_hw8_frontier_marks_only_strictly_worse_points() -> None:
     configurations = [
         {
             "configuration": 1,
             "score": 0.8,
             "cost_per_100_conversations_usd": 4.0,
-            "safety_passed": True,
         },
         {
             "configuration": 2,
             "score": 0.8,
             "cost_per_100_conversations_usd": 5.0,
-            "safety_passed": True,
         },
         {
             "configuration": 3,
             "score": 0.9,
             "cost_per_100_conversations_usd": 6.0,
-            "safety_passed": True,
         },
         {
             "configuration": 4,
-            "score": 1.0,
+            "score": 0.7,
             "cost_per_100_conversations_usd": 1.0,
-            "safety_passed": False,
         },
     ]
 
@@ -94,10 +90,10 @@ def test_hw9_frontier_marks_only_strictly_worse_points() -> None:
         for row in mark_dominated(configurations)
     }
 
-    assert marked == {1: False, 2: True, 3: False, 4: True}
+    assert marked == {1: False, 2: True, 3: False, 4: False}
 
 
-def test_hw9_prompt_candidate_keeps_injected_session_fields() -> None:
+def test_hw8_prompt_candidate_keeps_injected_session_fields() -> None:
     context = AuthContext(user_id=7, role="merchant", store_id=2)
     rendered = render_system_prompt(
         context, "Role {role}; user {user_id}; store {store_id}."
@@ -106,7 +102,7 @@ def test_hw9_prompt_candidate_keeps_injected_session_fields() -> None:
     assert rendered == "Role merchant; user 7; store 2."
 
 
-def test_hw9_model_selection_keeps_the_development_model_in_the_comparison() -> None:
+def test_hw8_model_selection_keeps_the_development_model_in_the_comparison() -> None:
     config = {
         "models": {
             "development_and_search": "model-c",

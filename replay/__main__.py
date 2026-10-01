@@ -27,10 +27,12 @@ import time
 from pathlib import Path
 from typing import Any
 
+from agents.exceptions import MaxTurnsExceeded, ModelBehaviorError
+
 from replay.harness import ReplayInfraError, replay_case, summarize_rollouts
 from replay.rollout import (
     apply_checks,
-    judge_reply,
+    judge_reply_with_text,
     load_cases,
     load_frozen_judge,
     retrieved_docs_text,
@@ -42,7 +44,38 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 RESULTS_DIR = REPO_ROOT / "replay" / "results"
 
 # Transport-shaped exceptions that count as infrastructure, not verdicts.
-_INFRA_ERRNOS = ("timeout", "timed out", "rate limit", "429", "connection", "503")
+_INFRA_ERRNOS = (
+    "timeout",
+    "timed out",
+    "rate limit",
+    "429",
+    "connection",
+    "disconnected",
+    "500",
+    "502",
+    "503",
+    "504",
+    "529",
+    "internal server error",
+    "service unavailable",
+    "overloaded",
+)
+
+
+def judge_provider_key(model: str) -> str | None:
+    """Name the API key a judge's model needs, from its provider prefix."""
+    from agent.agent import LITELLM_COURSE_MODELS
+
+    model = LITELLM_COURSE_MODELS.get(model, model)
+    if model.startswith(("gpt", "o1", "o3", "o4", "openai/")):
+        return "OPENAI_API_KEY"
+    if model.startswith(("claude", "anthropic/")):
+        return "ANTHROPIC_API_KEY"
+    if model.startswith(("together_ai/", "zai-org/")):
+        return "TOGETHER_API_KEY"
+    if model.startswith(("gemini", "gemini/")):
+        return "GEMINI_API_KEY"
+    return None
 
 
 def _is_infra_error(exc: Exception) -> bool:
@@ -59,17 +92,30 @@ def make_runner(
     """One rollout: run the case on the (already reset) world, apply the
     code checks and judges, and return the harness record."""
     db_path = world_root / "cartwheel.db"
-    judges = {
-        mode: load_frozen_judge(mode)
-        for mode in case["expected"].get("judges", {})
-        if os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("OPENAI_API_KEY")
-    }
+    judges = {mode: load_frozen_judge(mode) for mode in case["expected"].get("judges", {})}
+    for mode, judge in judges.items():
+        key = judge_provider_key(judge["model"])
+        if key and not os.environ.get(key):
+            raise ValueError(f"the {mode} judge uses {judge['model']} and needs {key}")
 
     def runner() -> dict[str, Any]:
         try:
             started = time.perf_counter()
             transcript = run_case(case, model=model, prompt_template=prompt_template)
             agent_latency_seconds = time.perf_counter() - started
+        except (ModelBehaviorError, MaxTurnsExceeded) as exc:
+            # The model misbehaved, e.g., it called a tool that does not
+            # exist. That is a failing verdict for this run, not an error.
+            return {
+                "passed": False,
+                "failure_modes": [f"agent_error:{type(exc).__name__}"],
+                "error": str(exc)[:500],
+                "steps": 0,
+                "tool_calls": [],
+                "usage": {"requests": 0, "input_tokens": 0, "output_tokens": 0},
+                "final_reply": "",
+                "agent_latency_seconds": time.perf_counter() - started,
+            }
         except Exception as exc:  # noqa: BLE001 - classified right below
             if _is_infra_error(exc):
                 raise ReplayInfraError(str(exc)) from exc
@@ -77,10 +123,14 @@ def make_runner(
         outcome = apply_checks(case, transcript, db_path)
         failure_modes = list(outcome["failed"])
         docs = retrieved_docs_text(transcript)
+        judge_reasons = {}
         for mode, judge in judges.items():
             expected = case["expected"]["judges"][mode]
             try:
-                verdict = judge_reply(judge, transcript["final_reply"], docs)
+                verdict, judge_reasons[mode] = judge_reply_with_text(
+                    judge, transcript["final_reply"], docs
+                )
+                judge_reasons[mode] = judge_reasons[mode][:1000]
             except Exception as exc:  # noqa: BLE001
                 if _is_infra_error(exc):
                     raise ReplayInfraError(str(exc)) from exc
@@ -96,6 +146,7 @@ def make_runner(
             ],
             "usage": transcript["usage"],
             "final_reply": transcript["final_reply"],
+            "judge_reasons": judge_reasons,
             "agent_latency_seconds": agent_latency_seconds,
         }
 

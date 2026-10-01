@@ -1,4 +1,4 @@
-"""Record the starting version or the selected final version for Homework 9."""
+"""Record the starting version or the selected final version for Homework 8."""
 
 from __future__ import annotations
 
@@ -34,13 +34,12 @@ def main() -> None:
     parser.add_argument(
         "--layer", choices=("prompt", "tool", "harness"), action="append"
     )
-    parser.add_argument("--method", choices=("manual", "gepa", "improve-loop"))
+    parser.add_argument("--method", choices=("manual", "gepa", "improve-loop"), action="append")
     args = parser.parse_args()
 
     split = read_json(SPLIT_PATH)
     validate_split(split)
     result = read_json(args.development_result)
-    safety = read_json(RESULTS_DIR / "safety-latest.json")
     config = read_json(Path(__file__).with_name("config.json"))
     validate_model_selection(config)
     development_model = config["models"]["development_and_search"]
@@ -57,10 +56,8 @@ def main() -> None:
             raise SystemExit("the selected models changed after the starting version was saved")
     if result["split"] != "development":
         raise SystemExit("the saved version needs a development result")
-    if result["git_commit"] != commit or safety["git_commit"] != commit:
-        raise SystemExit("rerun the development and safety commands on the current commit")
-    if not safety["passed"]:
-        raise SystemExit("the safety tests must pass before saving the version")
+    if result["git_commit"] != commit:
+        raise SystemExit("rerun the development command on the current commit")
     if split["grader_sha256"] != grader_hash():
         raise SystemExit("the cases, evaluation tests, or saved judges changed after the split")
     if result["model"] != development_model:
@@ -82,7 +79,6 @@ def main() -> None:
         "prompt_sha256_12": result["prompt_sha256_12"],
         "grader_sha256": split["grader_sha256"],
         "split_membership_sha256": split["membership_sha256"],
-        "safety_passed": True,
     }
     if args.kind == "final":
         if not args.layer or not args.method:

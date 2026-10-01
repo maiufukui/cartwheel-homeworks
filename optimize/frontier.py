@@ -1,4 +1,4 @@
-"""Plan and run the one Homework 9 test batch."""
+"""Plan and run the one Homework 8 test batch."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from observability.instrument import load_env
 from optimize.workflow import (
     CASES_PATH,
     FINAL_VERSION_PATH,
@@ -112,7 +113,7 @@ def run_one_configuration(
         ).stdout.strip()
     )
     number = configuration["configuration"]
-    with tempfile.TemporaryDirectory(prefix=f"hw9-configuration-{number}-") as temp:
+    with tempfile.TemporaryDirectory(prefix=f"hw8-configuration-{number}-") as temp:
         worktree = Path(temp) / "repo"
         subprocess.run(
             ["git", "worktree", "add", "--detach", str(worktree), configuration["git_commit"]],
@@ -122,7 +123,7 @@ def run_one_configuration(
             text=True,
         )
         try:
-            worktree_cartwheel = worktree / "cartwheel"
+            worktree_cartwheel = worktree / REPO_ROOT.resolve().relative_to(git_root.resolve())
             env = os.environ.copy()
             env["PYTHONDONTWRITEBYTECODE"] = "1"
             env["PYTHONPATH"] = os.pathsep.join(
@@ -166,6 +167,7 @@ def run_one_configuration(
 
 
 def run_command() -> None:
+    load_env()  # the worktrees have no .env, so pass the keys through os.environ
     plan = read_json(TEST_PLAN_PATH)
     plan_without_hash = {
         key: value for key, value in plan.items() if key != "plan_sha256"
@@ -182,8 +184,6 @@ def run_command() -> None:
         raise SystemExit("the existing test run belongs to a different plan")
     write_json(TEST_RUN_PATH, state)
 
-    starting_version = read_json(STARTING_VERSION_PATH)
-    final_version = read_json(FINAL_VERSION_PATH)
     configurations: list[dict[str, Any]] = []
     for configuration in plan["configurations"]:
         number = configuration["configuration"]
@@ -194,11 +194,6 @@ def run_command() -> None:
             write_json(TEST_RUN_PATH, state)
         else:
             result = read_json(output)
-        safety = (
-            final_version["safety_passed"]
-            if number == 4
-            else starting_version["safety_passed"]
-        )
         configurations.append(
             {
                 "configuration": number,
@@ -210,7 +205,6 @@ def run_command() -> None:
                 "write_pass_5": result["write_pass_5"],
                 "cost_per_100_conversations_usd": result["cost_per_100_conversations_usd"],
                 "median_latency_seconds": result["median_latency_seconds"],
-                "safety_passed": safety,
             }
         )
 

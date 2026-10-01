@@ -27,7 +27,7 @@ dev = [
 
 [project.optional-dependencies]
 optimization = [
-    "gepa>=0.1.4,<0.2",
+    "gepa==0.1.4",
 ]
 
 [build-system]

@@ -1,4 +1,4 @@
-"""Create the fixed Homework 9 case split and search budget."""
+"""Create the fixed Homework 8 case split and search budget."""
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ from optimize.workflow import (
 def main() -> None:
     if SPLIT_PATH.exists() or BUDGET_PATH.exists():
         raise SystemExit(
-            "Homework 9 state already exists. Keep the existing split and budget; "
+            "Homework 8 state already exists. Keep the existing split and budget; "
             "do not reset them."
         )
     validate_model_selection(
@@ -35,10 +35,11 @@ def main() -> None:
         kind: sum(case["kind"] == kind for case in cases)
         for kind in ("regression", "capability")
     }
-    if len(cases) != 30 or kinds != {"regression": 20, "capability": 10}:
+    if len(cases) < 6 or any(kinds[kind] < 2 for kind in kinds):
         raise SystemExit(
-            "Homework 9 needs the completed Homework 6 set: 30 cases, with "
-            "20 regression cases and 10 capability cases."
+            "Homework 8 needs at least six evaluation cases, including at least "
+            "two regression cases and two capability cases. Add cases before "
+            "creating the development and test split."
         )
     split = make_split(cases)
     split.update(

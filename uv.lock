@@ -267,7 +267,7 @@ dev = [
 requires-dist = [
     { name = "docetl", specifier = ">=0.2" },
     { name = "fastapi", specifier = ">=0.115" },
-    { name = "gepa", marker = "extra == 'optimization'", specifier = ">=0.1.4,<0.2" },
+    { name = "gepa", marker = "extra == 'optimization'", specifier = "==0.1.4" },
     { name = "langfuse", specifier = ">=3.0,<4" },
     { name = "litellm", specifier = ">=1.70" },
     { name = "numpy", specifier = ">=1.24" },

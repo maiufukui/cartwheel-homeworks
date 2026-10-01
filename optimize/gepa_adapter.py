@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import tempfile
 from pathlib import Path
 from typing import Any
 
-from agent.agent import SYSTEM_PROMPT_TEMPLATE
+from agent.agent import LITELLM_COURSE_MODELS, SYSTEM_PROMPT_TEMPLATE
 from observability.instrument import load_env
 from replay.__main__ import make_runner
 from replay.harness import replay_case
@@ -29,9 +30,27 @@ from optimize.workflow import (
 )
 
 REQUIRED_FIELDS = ("{role}", "{user_id}", "{store_id}")
+SMOKE_METRIC_CALLS = 4
+
+
+def litellm_model_id(model: str) -> str:
+    """Translate a course model name, e.g. glm-5.2, into the LiteLLM identifier."""
+    return LITELLM_COURSE_MODELS.get(model, model)
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--smoke",
+        action="store_true",
+        help="run one development case for a few evaluations without charging the budget",
+    )
+    parser.add_argument(
+        "--max-runs",
+        type=int,
+        help="stop after about this many evaluated case runs (default: the remaining budget)",
+    )
+    args = parser.parse_args()
     try:
         from gepa.optimize_anything import (
             EngineConfig,
@@ -46,7 +65,7 @@ def main() -> None:
     config = read_json(Path(__file__).with_name("config.json"))
     validate_model_selection(config)
     task_model = config["models"]["development_and_search"]
-    reflection_model = config["models"]["gepa_reflection"]
+    reflection_model = litellm_model_id(config["models"]["gepa_reflection"])
     split = read_json(SPLIT_PATH)
     validate_split(split)
     cases_by_id = {case["id"]: case for case in load_cases(CASES_PATH)}
@@ -64,16 +83,27 @@ def main() -> None:
         for case in cases
         for sample in range(runs_for_case(case))
     ]
+    if args.smoke:
+        units = units[:1]
     budget = read_json(BUDGET_PATH)
     remaining = budget["maximum_calls"] - budget["used_calls"]
-    if remaining < len(units):
+    limit = min(args.max_runs or remaining, remaining)
+    # GEPA checks its limit between steps, so one step can run past the limit by
+    # up to one full scoring of the development cases plus one reflection batch.
+    # Leave that much room so the search never hits the budget check mid-step.
+    gepa_limit = SMOKE_METRIC_CALLS if args.smoke else limit - (len(units) + 3)
+    if not args.smoke and gepa_limit < len(units):
         raise SystemExit(
-            f"GEPA needs at least {len(units)} remaining evaluated case runs, "
-            f"but {remaining} remain"
+            f"GEPA needs at least {2 * len(units) + 3} evaluated case runs, "
+            f"but only {limit} are allowed"
         )
+    run_dir = RESULTS_DIR / ("gepa-smoke" if args.smoke else "gepa-workspace")
 
-    def evaluate(candidate: str, unit: dict[str, Any]) -> tuple[float, dict[str, Any]]:
-        reserve_search_calls(1, f"gepa:{unit['case_id']}:{unit['sample']}")
+    # GEPA passes each dataset item to the evaluator as the keyword `example`.
+    def evaluate(candidate: str, example: dict[str, Any]) -> tuple[float, dict[str, Any]]:
+        unit = example
+        if not args.smoke:
+            reserve_search_calls(1, f"gepa:{unit['case_id']}:{unit['sample']}")
         missing_fields = [field for field in REQUIRED_FIELDS if field not in candidate]
         if missing_fields:
             return 0.0, {
@@ -81,7 +111,7 @@ def main() -> None:
                 "detail": "candidate is missing " + ", ".join(missing_fields),
             }
         case = cases_by_id[unit["case_id"]]
-        with tempfile.TemporaryDirectory(prefix="hw9-gepa-") as temp:
+        with tempfile.TemporaryDirectory(prefix="hw8-gepa-") as temp:
             root = Path(temp)
             record = replay_case(
                 make_runner(case, root, task_model, candidate), world_reset(root), n=1
@@ -93,31 +123,63 @@ def main() -> None:
             "expected_behavior": case["expected"].get("assertions", []),
         }
 
-    result = optimize_anything(
-        SYSTEM_PROMPT_TEMPLATE,
-        evaluator=evaluate,
-        dataset=units,
-        objective=(
-            "Improve the Cartwheel system prompt so the agent passes the development "
-            "case checks and the saved Homework 5 judges. Keep the three session fields, "
-            "and do not weaken access control, confirmation, or refund safety rules."
-        ),
-        background=(
-            f"The task model is {task_model}. Failed checks and expected behavior are returned "
-            "after each evaluated case run. Higher scores are better."
-        ),
-        config=GEPAConfig(
-            engine=EngineConfig(
-                run_dir=str(RESULTS_DIR / "gepa-workspace"),
-                seed=0,
-                max_metric_calls=remaining,
-                parallel=False,
-                max_workers=1,
-                raise_on_exception=True,
+    try:
+        result = optimize_anything(
+            SYSTEM_PROMPT_TEMPLATE,
+            evaluator=evaluate,
+            dataset=units,
+            objective=(
+                "Improve the Cartwheel system prompt so the agent passes the development "
+                "case checks and the saved Homework 5 judges. Keep the three session fields, "
+                "and do not weaken access control, confirmation, or refund safety rules."
             ),
-            reflection=ReflectionConfig(reflection_lm=reflection_model),
-        ),
-    )
+            background=(
+                f"The task model is {task_model}. Failed checks and expected behavior are "
+                "returned after each evaluated case run. Higher scores are better."
+            ),
+            config=GEPAConfig(
+                engine=EngineConfig(
+                    run_dir=str(run_dir),
+                    seed=0,
+                    max_metric_calls=gepa_limit,
+                    parallel=False,
+                    max_workers=1,
+                    raise_on_exception=True,
+                ),
+                reflection=ReflectionConfig(reflection_lm=reflection_model),
+            ),
+        )
+    except Exception as exc:
+        # Record what happened. GEPA keeps its progress in run_dir and resumes
+        # from it when the same command runs again.
+        if not args.smoke:
+            write_json(
+                RESULTS_DIR / "gepa-result.json",
+                {
+                    "stopped_early": True,
+                    "error": str(exc)[:500],
+                    "workspace": str(run_dir),
+                    "search_budget": read_json(BUDGET_PATH),
+                },
+            )
+        raise SystemExit(
+            f"GEPA stopped early: {str(exc)[:300]}\n"
+            f"Its progress is saved in {run_dir}. Run the same command again to resume."
+        ) from exc
+    if args.smoke:
+        print(
+            json.dumps(
+                {
+                    "smoke": "passed",
+                    "task_model": task_model,
+                    "reflection_model": reflection_model,
+                    "evaluations": result.total_metric_calls,
+                    "candidates": len(result.candidates),
+                },
+                indent=2,
+            )
+        )
+        return
     prompt_path = RESULTS_DIR / "gepa-best-prompt.txt"
     prompt_path.parent.mkdir(parents=True, exist_ok=True)
     prompt_path.write_text(result.best_candidate.rstrip() + "\n")

@@ -144,12 +144,15 @@ def model_settings_for(model: Any) -> ModelSettings:
     documents is passing `allowed_openai_params=["tools"]` per request; the
     Agents SDK forwards it through ModelSettings.extra_args.
     """
-    if isinstance(model, str) and model.startswith("gpt-"):
+    if isinstance(model, str) and model.startswith(("gpt-5", "o1", "o3", "o4")):
         return ModelSettings(
             reasoning={"effort": "high", "summary": "detailed"},
             verbosity="high",
             include_usage=True,
         )
+    if isinstance(model, str) and model.startswith("gpt-"):
+        # Older OpenAI chat models reject the reasoning and verbosity settings.
+        return ModelSettings(include_usage=True)
     model_id = getattr(model, "model", "") if not isinstance(model, str) else ""
     if model_id.startswith("together_ai/"):
         return ModelSettings(extra_args={"allowed_openai_params": ["tools"]})
